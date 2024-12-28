@@ -17,6 +17,7 @@
         <canvas id="xProfile" height="100"></canvas>
         <div class="info-corner">
           <p id="headerTab" class="toggle-button">header &gt;</p>
+          <p id="gridShow">show grid</p>
           <p id="pixelValue"></p>
           <p id="pixelPosition"></p>
         </div>
@@ -107,12 +108,24 @@
       const imageGridContainer = document.getElementById("imageGridContainer");
       const returnButton = document.getElementById("returnButton");
       const headerTable = document.getElementById("headerTable");
+      const gridShow = document.getElementById("gridShow");
       const searchInput = document.getElementById("searchInput");
       const resetButton = document.getElementById("resetButton");
 
       headerTab.addEventListener("click", () => {
         imageGridContainer.style.display = "none";
         headerGridContainer.style.display = "grid";
+      });
+
+      gridShow.addEventListener("click", () => {
+        showGrid = !showGrid;
+        if (showGrid) {
+          gridShow.textContent = "hide grid"
+        } else {
+          gridShow.textContent = "show grid"
+        }
+
+
       });
 
       returnButton.addEventListener("click", () => {
@@ -164,6 +177,65 @@
           row.appendChild(valueCell);
           row.appendChild(commentCell);
           headerTable.appendChild(row);
+        }
+      }
+
+      function drawWCSGrid() {
+        let [ramin, ramax, decmin, decmax] = wcs.sip_get_radec_bounds(50);
+        let pixScale = wcs.tan_pixel_scale();
+        let step = pixScale * lineStep * 0.00027777777777777778;
+
+        ctx.strokeStyle = "red";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+
+        for (let ra = rastep * Math.floor(ramin / rastep);
+             ra <= rastep * Math.ceil(ramax / rastep);
+             ra += rastep) {
+          let lastOk = false;
+          for (let dec=decmin; dec<=decmax; dec+=step) {
+            let xy = wcs.sip_radec2pixelxy(ra, dec);
+            if (xy == null) {
+              lastOk = false;
+              continue;
+            }
+
+            if (lastOk) {
+              ctx.lineTo(xy[0] * currentTransform.k + currentTransform.x * scaleX, xy[1] * currentTransform.k + currentTransform.y * scaleY);
+            }
+            else {
+              ctx.moveTo(xy[0] * currentTransform.k + currentTransform.x * scaleX, xy[1] * currentTransform.k + currentTransform.y * scaleY);
+            }
+
+            lastOk = true;
+          }
+        }
+        ctx.stroke();
+
+        for (let dec = decstep * Math.floor(decmin / decstep);
+           dec <= decstep * Math.ceil(decmax / decstep);
+           dec += decstep) {
+
+          let f = Math.cos(dec * (Math.PI / 180));
+          let rastep = step / Math.max(0.1, f);
+          let lastOk = false;
+          for (let ra=ramin; ra<=ramax; ra+=rastep) {
+            let xy = wcs.sip_radec2pixelxy(ra, dec);
+            if (xy == null) {
+              lastOk = false;
+              continue;
+            }
+
+            if (lastOk) {
+              ctx.lineTo(xy[0] * currentTransform.k + currentTransform.x*scaleX, xy[1] * currentTransform.k + currentTransform.y*scaleY);
+            }
+            else {
+              ctx.moveTo(xy[0] * currentTransform.k + currentTransform.x*scaleX, xy[1] * currentTransform.k + currentTransform.y*scaleY);
+            }
+
+            lastOk = true;
+          }
+          ctx.stroke();
         }
       }
 
@@ -250,6 +322,8 @@
         [headerData, normalizedData, imageWidth, imageHeight, imageData] =
           parseFITSImage(arrayBuffer, dataView);
 
+        wcs = new WCS(headerData);
+
         displayHeaderTable(headerData);
 
         console.timeLog("renderMonochromeImage", "FITS header and data parsed");
@@ -323,6 +397,10 @@
         });
 
         console.timeEnd("renderMonochromeImage", "Image rendered finished");
+
+        if (showGrid) {
+          drawWCSGrid();
+        }
       }
 
       function imageInteractionHandler(event, width, height) {
@@ -439,6 +517,9 @@
             // Redraw the original image with the appropriate transformation
             ctx.drawImage(offscreenCanvas, 0, 0, imageWidth, imageHeight);
             ctx.restore();
+            if (showGrid) {
+              drawWCSGrid();
+            }
           });
 
         d3.select(canvas).call(zoom);
