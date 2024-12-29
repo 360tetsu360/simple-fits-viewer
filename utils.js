@@ -421,7 +421,14 @@ class WCS {
         this.wcsaxes = parseInt(header["WCSAXES"].split("/")[0], 10);
         this.ctype1 = header["CTYPE1"].split("/")[0];
         this.ctype2 = header["CTYPE2"].split("/")[0];
-        this.sin = false;
+
+        if (this.ctype1 == "RA---SIN-SIP" && this.ctype2 == "DEC---SIN-SIP") {
+            this.sin = true;
+        } else if (this.ctype1 == "RA---TAN-SIP" && this.ctype2 == "DEC---TAN-SIP") {
+            this.sin = false;
+        } else {
+            console.error(`Unsupported wcs format: ${this.ctype1}`);
+        }
 
         this.equinox = parseFloat(header["EQUINOX"].split("/")[0]);
         this.lonpole = parseFloat(header["LONPOLE"].split("/")[0]);

@@ -12,14 +12,17 @@
     </div>
     <div class="mainContainer" style="display: none">
       <div id="imageGridContainer" class="grid-container">
-        <canvas id="loadedImage"></canvas>
+        <div id="canvasContainer">
+          <canvas id="loadedImage"></canvas>
+          <canvas id="gridLayer"></canvas>
+        </div>
         <canvas id="yProfile" width="100"></canvas>
         <canvas id="xProfile" height="100"></canvas>
         <div class="info-corner">
-          <p id="headerTab" class="toggle-button">header &gt;</p>
-          <p id="gridShow">show grid</p>
-          <p id="pixelValue"></p>
-          <p id="pixelPosition"></p>
+          <p id="headerTab" class="infoContent toggle-button">header &gt;</p>
+          <p id="gridShow" class="infoContent toggle-button">show grid</p>
+          <p id="pixelValue" class="infoContent"></p>
+          <p id="pixelPosition" class="infoContent"></p>
         </div>
       </div>
       <div
@@ -80,8 +83,12 @@
       const vscode = acquireVsCodeApi();
       const spinner = document.getElementById("spinner");
 
+      const canvasContainer = document.getElementById("canvasContainer");
       const canvas = document.getElementById("loadedImage");
       const ctx = canvas.getContext("2d");
+
+      const gridCanvas = document.getElementById("gridLayer");
+      const gridCtx = gridCanvas.getContext("2d");
 
       const xProfileCanvas = document.getElementById("xProfile");
       const xProfileCtx = xProfileCanvas.getContext("2d");
@@ -99,6 +106,10 @@
       let scaleX = null;
       let scaleY = null;
       let headerData = {};
+      let showGrid = false;
+      let rastep = 30;
+      let decstep = 30;
+      let lineStep = 30;
 
       const mainContainer = document.querySelector(".mainContainer");
       const headerTab = document.getElementById("headerTab");
@@ -120,9 +131,16 @@
       gridShow.addEventListener("click", () => {
         showGrid = !showGrid;
         if (showGrid) {
-          gridShow.textContent = "hide grid"
+          drawWCSGrid();
+          gridShow.textContent = "hide grid";
         } else {
-          gridShow.textContent = "show grid"
+          gridCtx.clearRect(
+            0,
+            0,
+            gridCtx.canvas.width,
+            gridCtx.canvas.height
+          );
+          gridShow.textContent = "show grid";
         }
 
 
@@ -181,13 +199,19 @@
       }
 
       function drawWCSGrid() {
+        gridCtx.clearRect(
+            0,
+            0,
+            gridCtx.canvas.width,
+            gridCtx.canvas.height
+          );
         let [ramin, ramax, decmin, decmax] = wcs.sip_get_radec_bounds(50);
         let pixScale = wcs.tan_pixel_scale();
         let step = pixScale * lineStep * 0.00027777777777777778;
 
-        ctx.strokeStyle = "red";
-        ctx.lineWidth = 3;
-        ctx.beginPath();
+        gridCtx.strokeStyle = "red";
+        gridCtx.lineWidth = 3;
+        gridCtx.beginPath();
 
         for (let ra = rastep * Math.floor(ramin / rastep);
              ra <= rastep * Math.ceil(ramax / rastep);
@@ -201,16 +225,15 @@
             }
 
             if (lastOk) {
-              ctx.lineTo(xy[0] * currentTransform.k + currentTransform.x * scaleX, xy[1] * currentTransform.k + currentTransform.y * scaleY);
+              gridCtx.lineTo(xy[0] * currentTransform.k + currentTransform.x * scaleX, xy[1] * currentTransform.k + currentTransform.y * scaleY);
             }
             else {
-              ctx.moveTo(xy[0] * currentTransform.k + currentTransform.x * scaleX, xy[1] * currentTransform.k + currentTransform.y * scaleY);
+              gridCtx.moveTo(xy[0] * currentTransform.k + currentTransform.x * scaleX, xy[1] * currentTransform.k + currentTransform.y * scaleY);
             }
 
             lastOk = true;
           }
         }
-        ctx.stroke();
 
         for (let dec = decstep * Math.floor(decmin / decstep);
            dec <= decstep * Math.ceil(decmax / decstep);
@@ -219,6 +242,12 @@
           let f = Math.cos(dec * (Math.PI / 180));
           let rastep = step / Math.max(0.1, f);
           let lastOk = false;
+
+          console.log(ramax);
+          console.log(ramin);
+
+          let firstX = 0;
+          let firstY = 0;
           for (let ra=ramin; ra<=ramax; ra+=rastep) {
             let xy = wcs.sip_radec2pixelxy(ra, dec);
             if (xy == null) {
@@ -226,16 +255,25 @@
               continue;
             }
 
+            if (ramin == 0 && ramax == 360 && ra == 0) {
+              firstX = xy[0];
+              firstY = xy[1];
+            }
+
             if (lastOk) {
-              ctx.lineTo(xy[0] * currentTransform.k + currentTransform.x*scaleX, xy[1] * currentTransform.k + currentTransform.y*scaleY);
+              gridCtx.lineTo(xy[0] * currentTransform.k + currentTransform.x*scaleX, xy[1] * currentTransform.k + currentTransform.y*scaleY);
             }
             else {
-              ctx.moveTo(xy[0] * currentTransform.k + currentTransform.x*scaleX, xy[1] * currentTransform.k + currentTransform.y*scaleY);
+              gridCtx.moveTo(xy[0] * currentTransform.k + currentTransform.x*scaleX, xy[1] * currentTransform.k + currentTransform.y*scaleY);
             }
 
             lastOk = true;
           }
-          ctx.stroke();
+
+          if (ramin == 0 && ramax == 360 && lastOk) {
+            gridCtx.lineTo(firstX * currentTransform.k + currentTransform.x*scaleX, firstY * currentTransform.k + currentTransform.y*scaleY);
+          }
+          gridCtx.stroke();
         }
       }
 
@@ -354,6 +392,11 @@
         canvas.width = imageWidth;
         canvas.height = imageHeight;
 
+        gridCanvas.width = imageWidth;
+        gridCanvas.height = imageHeight;
+        canvasContainer.width = imageWidth;
+        canvasContainer.height = imageHeight;
+
         offscreenCanvas = document.createElement("canvas");
         offscreenCanvas.width = imageWidth;
         offscreenCanvas.height = imageHeight;
@@ -374,6 +417,12 @@
         );
         canvas.style.width = `${imageWidth * scaleFactor - 100}px`;
         canvas.style.height = `${imageHeight * scaleFactor - 100}px`;
+//
+        gridCanvas.style.width = `${imageWidth * scaleFactor - 100}px`;
+        gridCanvas.style.height = `${imageHeight * scaleFactor - 100}px`;
+        canvasContainer.style.width = `${imageWidth * scaleFactor - 100}px`;
+        canvasContainer.style.height = `${imageHeight * scaleFactor - 100}px`;
+
 
         spinner.style.display = "none";
         mainContainer.style.display = "grid";
@@ -392,7 +441,7 @@
         ).style.width = `${rect.width}px`;
 
         // Add mousemove event listener to show pixel value and line profiles
-        canvas.addEventListener("mousemove", (event) => {
+        canvasContainer.addEventListener("mousemove", (event) => {
           imageInteractionHandler(event, imageWidth, imageHeight);
         });
 
@@ -522,7 +571,7 @@
             }
           });
 
-        d3.select(canvas).call(zoom);
+        d3.select(canvasContainer).call(zoom);
       }
 
       console.time("loadData");
